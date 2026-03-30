@@ -17,13 +17,13 @@ def get_dynamic_url():
     # GitHub Actions 伺服器預設為 UTC 時間，校正為台灣時間 (UTC+8)
     tw_time = datetime.utcnow() + timedelta(hours=8)
     
-    # 預設抓取最近 5 天的資料
-    start_date = tw_time - timedelta(days=5)
+    # 預設抓取最近 3 天的資料
+    start_date = tw_time - timedelta(days=3)
     
     start_str = start_date.strftime("%Y/%m/%d")
     end_str = tw_time.strftime("%Y/%m/%d")
     
-    # 將日期轉為 URL 編碼 (例如 / 變成 %2F)
+    # 將日期轉為 URL 編碼
     start_encoded = urllib.parse.quote(start_str, safe='')
     end_encoded = urllib.parse.quote(end_str, safe='')
     
@@ -63,7 +63,6 @@ def scrape_pcc_tenders():
             cols = row.find_all(["td", "th"])
             
             if len(cols) >= 7: 
-                # 略過表頭
                 if cols[0].text.strip() == '項次' or not cols[0].text.strip().isdigit():
                     continue
 
@@ -85,7 +84,6 @@ def scrape_pcc_tenders():
                     if span_tag:
                         tender_name = span_tag.text.strip()
 
-                # 最後防線：無差別文字扣除法
                 if not tender_name:
                     full_text = cols[2].get_text(separator=" ", strip=True)
                     tender_name = full_text.replace(tender_no, "", 1).strip()
@@ -103,7 +101,7 @@ def scrape_pcc_tenders():
                     "機關名稱": texts[1],
                     "標案案號": tender_no,
                     "標案名稱": tender_name,
-                    "標案連結": tender_link, # 之後會在信件中轉換成超連結
+                    "標案連結": tender_link,
                     "招標方式": texts[3],
                     "標的分類": texts[4],
                     "公告日期": texts[5],
@@ -118,96 +116,75 @@ def scrape_pcc_tenders():
     return data
 
 def send_email(df):
+    # ==========================================
+    # 恢復使用環境變數讀取 (請確保 GitHub Secrets 已設定這三個變數)
+    # ==========================================
     sender_email = os.environ.get('GMAIL_USER')
     sender_password = os.environ.get('GMAIL_APP_PASSWORD')
     receiver_email = os.environ.get('RECEIVER_EMAIL')
 
-    if not sender_email or not sender_password:
-        print("未設定 Email 環境變數，無法發送郵件 (請確認 GitHub Secrets 設定)。")
+    if not sender_email or not sender_password or not receiver_email:
+        print("未設定完整的 Email 環境變數，無法發送郵件。")
         return
 
-    # 信件標題使用台灣時間
     tw_time = datetime.utcnow() + timedelta(hours=8)
     date_str = tw_time.strftime('%Y-%m-%d')
 
     msg = MIMEMultipart()
     msg['From'] = sender_email
     msg['To'] = receiver_email
-    msg['Subject'] = f"政府採購公告決標通知 ({date_str})"
+    msg['Subject'] = f"電動車標案通知 ({date_str})"
 
-    # 將網址與名稱結合成 HTML 點擊標籤
-    if '標案連結' in df.columns and '標案名稱' in df.columns:
-        df['標案名稱'] = df.apply(
-            lambda x: f"<a href='{x['標案連結']}' target='_blank'>{x['標案名稱']}</a>" if x['標案連結'] else x['標案名稱'], 
-            axis=1
-        )
-        # 刪除獨立的連結欄位，保持表格乾淨
-        df = df.drop(columns=['標案連結'])
+    # ==========================================
+    # 將 DataFrame 轉為 Outlook 友善的「條列式 + 分隔線」HTML
+    # ==========================================
+    content_lines = []
+    for index, row in df.iterrows():
+        # 每筆資料的專屬區塊
+        item_html = f"""
+        <div style="margin-bottom: 20px;">
+            <h4 style="color: #0056b3; margin-top: 0; margin-bottom: 10px; font-size: 16px;">
+                【第 {index + 1} 筆】{row['標案名稱']}
+            </h4>
+            <p style="margin: 3px 0;"><b>機關名稱：</b>{row['機關名稱']}</p>
+            <p style="margin: 3px 0;"><b>標案案號：</b>{row['標案案號']}</p>
+            <p style="margin: 3px 0;"><b>招標方式：</b>{row['招標方式']}</p>
+            <p style="margin: 3px 0;"><b>標的分類：</b>{row['標的分類']}</p>
+            <p style="margin: 3px 0;"><b>公告日期：</b>{row['公告日期']}</p>
+            <p style="margin: 3px 0;"><b>決標金額：</b>{row['決標金額']}</p>
+            <p style="margin-top: 10px;">
+                <a href="{row['標案連結']}" style="color: #ffffff; background-color: #007BFF; padding: 6px 12px; text-decoration: none; border-radius: 4px; font-size: 14px; display: inline-block;">
+                    🔍 點擊查看詳細內容
+                </a>
+            </p>
+        </div>
+        <hr style="border: 0; border-top: 1px dashed #cccccc; margin: 20px 0;">
+        """
+        content_lines.append(item_html)
+    
+    # 將所有條列資料組合起來
+    items_html_string = "".join(content_lines)
 
-    # 轉換為 HTML 表格
-    html_table = df.to_html(index=False, escape=False, border=0, classes="styled-table")
-
-    # CSS 樣式與郵件內容設計
+    # 主體架構
     html_content = f"""
     <html>
-    <head>
-    <style>
-        body {{
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            color: #333333;
-            line-height: 1.6;
-        }}
-        .styled-table {{
-            border-collapse: collapse;
-            margin: 25px 0;
-            font-size: 0.9em;
-            min-width: 800px;
-            box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
-        }}
-        .styled-table thead tr {{
-            background-color: #007BFF;
-            color: #ffffff;
-            text-align: left;
-        }}
-        .styled-table th, .styled-table td {{
-            padding: 12px 15px;
-            border: 1px solid #dddddd;
-        }}
-        .styled-table tbody tr {{
-            border-bottom: 1px solid #dddddd;
-        }}
-        .styled-table tbody tr:nth-of-type(even) {{
-            background-color: #f9f9f9;
-        }}
-        .styled-table tbody tr:last-of-type {{
-            border-bottom: 2px solid #007BFF;
-        }}
-        a {{
-            color: #007BFF;
-            text-decoration: none;
-            font-weight: bold;
-        }}
-        a:hover {{
-            text-decoration: underline;
-            color: #0056b3;
-        }}
-    </style>
-    </head>
-    <body>
-        <h3 style="color: #007BFF;">每日電動車決標速報 🚗</h3>
-        <p>您好，以下為最近 3 天的相關標案資料。本日共為您抓取到 <b>{len(df)}</b> 筆最新資訊：</p>
-        
-        {html_table}
-        
+    <head></head>
+    <body style="font-family: '微軟正黑體', 'Segoe UI', sans-serif; color: #333333; line-height: 1.5; padding: 10px;">
+        <h3 style="color: #007BFF; border-bottom: 2px solid #007BFF; padding-bottom: 5px;">每日電動車標案速報 🚗</h3>
+        <p style="font-size: 15px;">您好，以下為最近 3 天的相關標案資料。本日共為您抓取到 <b>{len(df)}</b> 筆最新資訊：</p>
         <br>
-        <p style="color: #999999; font-size: 0.85em;">本信件由 GitHub Actions 每日自動執行發送，請勿直接回覆。</p>
+        
+        {items_html_string}
+        
+        <p style="color: #999999; font-size: 12px; margin-top: 30px;">
+            本信件由 GitHub Actions 每日自動執行發送，請勿直接回覆。
+        </p>
     </body>
     </html>
     """
 
     msg.attach(MIMEText(html_content, 'html', 'utf-8'))
 
-    # 發送郵件
     try:
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
@@ -225,11 +202,9 @@ if __name__ == "__main__":
     print("--- 開始執行政府採購網自動化爬蟲 ---")
     results = scrape_pcc_tenders()
     
-    # 防呆機制：確保資料存在且大於 0 筆
     if results and len(results) > 0:
         df = pd.DataFrame(results)
         
-        # 雙重確認表格不是空的
         if not df.empty:
             print(f"成功抓取 {len(df)} 筆資料，準備寄發 HTML 信件...")
             send_email(df)
