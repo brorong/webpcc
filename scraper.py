@@ -17,8 +17,8 @@ def get_dynamic_url():
     # GitHub Actions 伺服器預設為 UTC 時間，校正為台灣時間 (UTC+8)
     tw_time = datetime.utcnow() + timedelta(hours=8)
     
-    # 預設抓取最近 15 天的資料
-    start_date = tw_time - timedelta(days=15)
+    # 預設抓取最近 7 天的資料
+    start_date = tw_time - timedelta(days=7)
     
     start_str = start_date.strftime("%Y/%m/%d")
     end_str = tw_time.strftime("%Y/%m/%d")
@@ -172,7 +172,7 @@ def send_email(df):
     <head></head>
     <body style="font-family: '微軟正黑體', 'Segoe UI', sans-serif; color: #333333; line-height: 1.5; padding: 10px;">
         <h3 style="color: #007BFF; border-bottom: 2px solid #007BFF; padding-bottom: 5px;">每日電動車標案決標速報 🚗</h3>
-        <p style="font-size: 15px;">您好，以下為最近 15 天的相關標案資料。本日共為您抓取到 <b>{len(df)}</b> 筆最新資訊：</p>
+        <p style="font-size: 15px;">您好，以下為最近 7 天的相關標案資料。本日共為您抓取到 <b>{len(df)}</b> 筆最新資訊：</p>
         <br>
         {items_html_string}
         <p style="color: #999999; font-size: 12px; margin-top: 30px;">
