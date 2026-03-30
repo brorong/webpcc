@@ -14,8 +14,10 @@ from bs4 import BeautifulSoup
 import pandas as pd
 
 def get_dynamic_url():
-    # GitHub Actions 伺服器預設為 UTC 時間，我們將其校正為台灣時間 (UTC+8)
+    # GitHub Actions 伺服器預設為 UTC 時間，校正為台灣時間 (UTC+8)
     tw_time = datetime.utcnow() + timedelta(hours=8)
+    
+    # 預設抓取最近 3 天的資料
     start_date = tw_time - timedelta(days=3)
     
     start_str = start_date.strftime("%Y/%m/%d")
@@ -33,11 +35,12 @@ def get_dynamic_url():
 def scrape_pcc_tenders():
     url = get_dynamic_url()
     
+    # 設定 Selenium 參數 (針對 GitHub Actions 環境優化)
     chrome_options = Options()
     chrome_options.add_argument("--headless") 
     chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--no-sandbox")            # GitHub Actions 必備
-    chrome_options.add_argument("--disable-dev-shm-usage") # GitHub Actions 必備
+    chrome_options.add_argument("--no-sandbox")            
+    chrome_options.add_argument("--disable-dev-shm-usage") 
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
@@ -60,6 +63,7 @@ def scrape_pcc_tenders():
             cols = row.find_all(["td", "th"])
             
             if len(cols) >= 7: 
+                # 略過表頭
                 if cols[0].text.strip() == '項次' or not cols[0].text.strip().isdigit():
                     continue
 
@@ -69,7 +73,7 @@ def scrape_pcc_tenders():
                 strings = list(cols[2].stripped_strings)
                 tender_no = strings[0] if len(strings) > 0 else ""
                 
-                # --- 2. 抓取標案名稱 (優先鎖定 a 標籤的 title 屬性) ---
+                # --- 2. 精準抓取標案名稱 ---
                 tender_name = ""
                 a_tag = cols[2].find('a')
                 if a_tag and a_tag.get('title'):
@@ -99,7 +103,7 @@ def scrape_pcc_tenders():
                     "機關名稱": texts[1],
                     "標案案號": tender_no,
                     "標案名稱": tender_name,
-                    "標案連結": tender_link, # 稍後會在寄信階段整合成超連結並刪除此欄位
+                    "標案連結": tender_link, # 之後會在信件中轉換成超連結
                     "招標方式": texts[3],
                     "標的分類": texts[4],
                     "公告日期": texts[5],
@@ -119,10 +123,10 @@ def send_email(df):
     receiver_email = os.environ.get('RECEIVER_EMAIL')
 
     if not sender_email or not sender_password:
-        print("未設定 Email 環境變數，無法發送郵件 (如果您在本地端測試，請先設定好環境變數)。")
+        print("未設定 Email 環境變數，無法發送郵件 (請確認 GitHub Secrets 設定)。")
         return
 
-    # 取得當前台灣時間作為信件標題
+    # 信件標題使用台灣時間
     tw_time = datetime.utcnow() + timedelta(hours=8)
     date_str = tw_time.strftime('%Y-%m-%d')
 
@@ -131,19 +135,19 @@ def send_email(df):
     msg['To'] = receiver_email
     msg['Subject'] = f"電動車標案通知 ({date_str})"
 
-    # --- 將「標案名稱」與「標案連結」合併成 HTML 超連結標籤 ---
+    # 將網址與名稱結合成 HTML 點擊標籤
     if '標案連結' in df.columns and '標案名稱' in df.columns:
         df['標案名稱'] = df.apply(
             lambda x: f"<a href='{x['標案連結']}' target='_blank'>{x['標案名稱']}</a>" if x['標案連結'] else x['標案名稱'], 
             axis=1
         )
-        # 刪除獨立的連結欄位，讓表格更乾淨
+        # 刪除獨立的連結欄位，保持表格乾淨
         df = df.drop(columns=['標案連結'])
 
-    # --- 將 DataFrame 轉換為 HTML 表格 (escape=False 確保超連結生效) ---
+    # 轉換為 HTML 表格
     html_table = df.to_html(index=False, escape=False, border=0, classes="styled-table")
 
-    # --- 設計郵件的 HTML 內容與 CSS 樣式 ---
+    # CSS 樣式與郵件內容設計
     html_content = f"""
     <html>
     <head>
@@ -196,13 +200,14 @@ def send_email(df):
         {html_table}
         
         <br>
-        <p style="color: #999999; font-size: 0.85em;">本信件由 GitHub Actions 每日早上 06:30 自動執行發送，請勿直接回覆。</p>
+        <p style="color: #999999; font-size: 0.85em;">本信件由 GitHub Actions 每日自動執行發送，請勿直接回覆。</p>
     </body>
     </html>
     """
 
     msg.attach(MIMEText(html_content, 'html', 'utf-8'))
 
+    # 發送郵件
     try:
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
@@ -213,13 +218,22 @@ def send_email(df):
     except Exception as e:
         print(f"❌ 郵件發送失敗: {e}")
 
+# ==========================================
+# 主程式執行區塊
+# ==========================================
 if __name__ == "__main__":
     print("--- 開始執行政府採購網自動化爬蟲 ---")
     results = scrape_pcc_tenders()
     
-    if results:
+    # 防呆機制：確保資料存在且大於 0 筆
+    if results and len(results) > 0:
         df = pd.DataFrame(results)
-        print(f"成功抓取 {len(df)} 筆資料，準備寄發精美 HTML 信件...")
-        send_email(df)
+        
+        # 雙重確認表格不是空的
+        if not df.empty:
+            print(f"成功抓取 {len(df)} 筆資料，準備寄發 HTML 信件...")
+            send_email(df)
+        else:
+            print("表格內容為空，不發送郵件。")
     else:
-        print("最近三天無相關標案，不發信。")
+        print("沒有查詢到新案件，郵件不用發出，程式自動結束。")
