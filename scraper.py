@@ -133,7 +133,7 @@ def send_email(df):
     msg = MIMEMultipart()
     msg['From'] = sender_email
     msg['To'] = receiver_email
-    msg['Subject'] = f"電動車標案通知 ({date_str})"
+    msg['Subject'] = f"政府採購公告決標通知 ({date_str})"
 
     # 將網址與名稱結合成 HTML 點擊標籤
     if '標案連結' in df.columns and '標案名稱' in df.columns:
@@ -194,7 +194,7 @@ def send_email(df):
     </style>
     </head>
     <body>
-        <h3 style="color: #007BFF;">每日電動車標案速報 🚗</h3>
+        <h3 style="color: #007BFF;">每日電動車決標速報 🚗</h3>
         <p>您好，以下為最近 3 天的相關標案資料。本日共為您抓取到 <b>{len(df)}</b> 筆最新資訊：</p>
         
         {html_table}
