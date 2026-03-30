@@ -18,7 +18,7 @@ def get_dynamic_url():
     tw_time = datetime.utcnow() + timedelta(hours=8)
     
     # 預設抓取最近 15 天的資料
-    start_date = tw_time - timedelta(days=3)
+    start_date = tw_time - timedelta(days=15)
     
     start_str = start_date.strftime("%Y/%m/%d")
     end_str = tw_time.strftime("%Y/%m/%d")
