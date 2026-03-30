@@ -17,8 +17,8 @@ def get_dynamic_url():
     # GitHub Actions 伺服器預設為 UTC 時間，校正為台灣時間 (UTC+8)
     tw_time = datetime.utcnow() + timedelta(hours=8)
     
-    # 預設抓取最近 3 天的資料
-    start_date = tw_time - timedelta(days=15)
+    # 預設抓取最近 5 天的資料
+    start_date = tw_time - timedelta(days=5)
     
     start_str = start_date.strftime("%Y/%m/%d")
     end_str = tw_time.strftime("%Y/%m/%d")
