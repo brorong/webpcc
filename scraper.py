@@ -117,22 +117,26 @@ def scrape_pcc_tenders():
 
 def send_email(df):
     # ==========================================
-    # 恢復使用環境變數讀取 (請確保 GitHub Secrets 已設定這三個變數)
+    # 讀取環境變數
     # ==========================================
     sender_email = os.environ.get('GMAIL_USER')
     sender_password = os.environ.get('GMAIL_APP_PASSWORD')
-    receiver_email = os.environ.get('RECEIVER_EMAIL')
+    receiver_emails_str = os.environ.get('RECEIVER_EMAIL') # 這裡讀取到的會是一串字串
 
-    if not sender_email or not sender_password or not receiver_email:
+    if not sender_email or not sender_password or not receiver_emails_str:
         print("未設定完整的 Email 環境變數，無法發送郵件。")
         return
+
+    # 【關鍵修改】將讀取到的字串用「逗號」切開，變成一個乾淨的信箱列表
+    receivers_list = [email.strip() for email in receiver_emails_str.split(',')]
 
     tw_time = datetime.utcnow() + timedelta(hours=8)
     date_str = tw_time.strftime('%Y-%m-%d')
 
     msg = MIMEMultipart()
     msg['From'] = sender_email
-    msg['To'] = receiver_email
+    # 信件標頭的收件者顯示（把列表用逗號重新組合成字串）
+    msg['To'] = ", ".join(receivers_list) 
     msg['Subject'] = f"政府採購電動車標案決標通知 ({date_str})"
 
     # ==========================================
@@ -140,7 +144,6 @@ def send_email(df):
     # ==========================================
     content_lines = []
     for index, row in df.iterrows():
-        # 每筆資料的專屬區塊
         item_html = f"""
         <div style="margin-bottom: 20px;">
             <h4 style="color: #0056b3; margin-top: 0; margin-bottom: 10px; font-size: 16px;">
@@ -162,20 +165,16 @@ def send_email(df):
         """
         content_lines.append(item_html)
     
-    # 將所有條列資料組合起來
     items_html_string = "".join(content_lines)
 
-    # 主體架構
     html_content = f"""
     <html>
     <head></head>
     <body style="font-family: '微軟正黑體', 'Segoe UI', sans-serif; color: #333333; line-height: 1.5; padding: 10px;">
-        <h3 style="color: #007BFF; border-bottom: 2px solid #007BFF; padding-bottom: 5px;">每日電動車決標速報 🚗</h3>
+        <h3 style="color: #007BFF; border-bottom: 2px solid #007BFF; padding-bottom: 5px;">每日電動車標案決標速報 🚗</h3>
         <p style="font-size: 15px;">您好，以下為最近 15 天的相關標案資料。本日共為您抓取到 <b>{len(df)}</b> 筆最新資訊：</p>
         <br>
-        
         {items_html_string}
-        
         <p style="color: #999999; font-size: 12px; margin-top: 30px;">
             本信件由 GitHub Actions 每日自動執行發送，請勿直接回覆。
         </p>
@@ -189,12 +188,14 @@ def send_email(df):
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
         server.login(sender_email, sender_password)
-        server.send_message(msg)
+        
+        # 【關鍵修改】使用 sendmail 方法，並傳入真正的信箱列表 (receivers_list)
+        server.sendmail(sender_email, receivers_list, msg.as_string())
+        
         server.quit()
-        print("✅ HTML 郵件發送成功！")
+        print(f"✅ HTML 郵件成功發送給 {len(receivers_list)} 位收件者！")
     except Exception as e:
         print(f"❌ 郵件發送失敗: {e}")
-
 # ==========================================
 # 主程式執行區塊
 # ==========================================
