@@ -17,7 +17,7 @@ def get_dynamic_url():
     # GitHub Actions 伺服器預設為 UTC 時間，校正為台灣時間 (UTC+8)
     tw_time = datetime.utcnow() + timedelta(hours=8)
     
-    # 預設抓取最近 3 天的資料
+    # 預設抓取最近 15 天的資料
     start_date = tw_time - timedelta(days=3)
     
     start_str = start_date.strftime("%Y/%m/%d")
@@ -133,7 +133,7 @@ def send_email(df):
     msg = MIMEMultipart()
     msg['From'] = sender_email
     msg['To'] = receiver_email
-    msg['Subject'] = f"電動車標案通知 ({date_str})"
+    msg['Subject'] = f"政府採購電動車標案決標通知 ({date_str})"
 
     # ==========================================
     # 將 DataFrame 轉為 Outlook 友善的「條列式 + 分隔線」HTML
@@ -170,8 +170,8 @@ def send_email(df):
     <html>
     <head></head>
     <body style="font-family: '微軟正黑體', 'Segoe UI', sans-serif; color: #333333; line-height: 1.5; padding: 10px;">
-        <h3 style="color: #007BFF; border-bottom: 2px solid #007BFF; padding-bottom: 5px;">每日電動車標案速報 🚗</h3>
-        <p style="font-size: 15px;">您好，以下為最近 3 天的相關標案資料。本日共為您抓取到 <b>{len(df)}</b> 筆最新資訊：</p>
+        <h3 style="color: #007BFF; border-bottom: 2px solid #007BFF; padding-bottom: 5px;">每日電動車決標速報 🚗</h3>
+        <p style="font-size: 15px;">您好，以下為最近 15 天的相關標案資料。本日共為您抓取到 <b>{len(df)}</b> 筆最新資訊：</p>
         <br>
         
         {items_html_string}
