@@ -176,7 +176,7 @@ def send_email(df):
         <br>
         {items_html_string}
         <p style="color: #999999; font-size: 12px; margin-top: 30px;">
-            本信件由 GitHub Actions 每日自動執行發送，請勿直接回覆。
+            本信件由 AutoMail 每日自動執行發送，請勿直接回覆。
         </p>
     </body>
     </html>
