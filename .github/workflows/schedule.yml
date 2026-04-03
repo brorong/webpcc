@@ -2,8 +2,8 @@ name: Daily EV Tenders Scraper
 
 on:
   schedule:
-    # 分 時 日 月 星期。 23:45 UTC = 台灣時間 07:45
-    - cron: '30 00 * * *'
+    # 分 時 日 月 星期。 23:50 UTC = 台灣時間 07:50
+    - cron: '50 23 * * *'
   workflow_dispatch: # 允許您在 GitHub 網頁上手動點擊執行測試
 
 jobs:
