@@ -139,7 +139,7 @@ def send_email(df):
     msg = MIMEMultipart()
     msg['From'] = sender_email
     msg['To'] = ", ".join(receivers_list)
-    msg['Subject'] = f"電動車標案通知 ({date_str})"
+    msg['Subject'] = f"電動車標案決標通知 ({date_str})"
 
     content_lines = []
     # 使用 iterrows 時，利用迴圈的 index 重新編排顯示的項次
@@ -171,8 +171,8 @@ def send_email(df):
     <html>
     <head></head>
     <body style="font-family: '微軟正黑體', 'Segoe UI', sans-serif; color: #333333; line-height: 1.5; padding: 10px;">
-        <h3 style="color: #007BFF; border-bottom: 2px solid #007BFF; padding-bottom: 5px;">每日電動車/汽車標案速報 🚗</h3>
-        <p style="font-size: 15px;">您好，以下為最近 3 天的相關標案資料。本日共為您抓取並過濾出 <b>{len(df)}</b> 筆最新不重複資訊：</p>
+        <h3 style="color: #007BFF; border-bottom: 2px solid #007BFF; padding-bottom: 5px;">每日電動車決標案件速報 🚗</h3>
+        <p style="font-size: 15px;">您好，以下為最近 3 天的相關決標案件。本日共為您抓取並過濾出 <b>{len(df)}</b> 筆最新不重複資訊：</p>
         <br>
         {items_html_string}
         <p style="color: #999999; font-size: 12px; margin-top: 30px;">
