@@ -24,7 +24,7 @@ def get_dynamic_urls():
     start_encoded = urllib.parse.quote(start_str, safe='')
     end_encoded = urllib.parse.quote(end_str, safe='')
     
-    print(f"🔍 搜尋日期區間：{start_str} ~ {end_str}")
+    print(f"🔍 搜尋日期區間：{start_str} ~ {end_str}", flush=True)
     
     # 【階段一：寬鬆抓取】只搜尋「電動」大類
     keywords = ["電動"]
@@ -49,7 +49,7 @@ def scrape_pcc_tenders():
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
-    print("正在啟動虛擬瀏覽器...")
+    print("正在啟動虛擬瀏覽器...", flush=True)
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=chrome_options)
     
@@ -57,9 +57,9 @@ def scrape_pcc_tenders():
     all_data = []
 
     try:
-        # 輪流造訪每一個關鍵字的網址 (目前只有"電動")
+        # 輪流造訪每一個關鍵字的網址
         for kw, url in urls_info:
-            print(f"▶ 正在網站上搜尋包含【{kw}】的大範圍案件...")
+            print(f"▶ 正在網站上搜尋包含【{kw}】的大範圍案件...", flush=True)
             driver.get(url)
             time.sleep(5) # 等待 JS 渲染
             
@@ -116,19 +116,26 @@ def scrape_pcc_tenders():
                     })
 
     except Exception as e:
-        print(f"執行過程中發生錯誤: {e}")
+        print(f"執行過程中發生錯誤: {e}", flush=True)
     finally:
         driver.quit()
 
     return all_data
 
 def send_email(df):
+    print("▶ 進入發信模組，開始讀取環境變數...", flush=True)
     sender_email = os.environ.get('GMAIL_USER')
     sender_password = os.environ.get('GMAIL_APP_PASSWORD')
     receiver_emails_str = os.environ.get('RECEIVER_EMAIL')
 
+    # 印出變數讀取狀態 (故意遮蔽密碼以策安全)
+    pwd_status = "✅ 已成功讀取" if sender_password else "❌ 未讀取到 (空的)"
+    print(f"   - 發信帳號 (GMAIL_USER): {sender_email}", flush=True)
+    print(f"   - 應用密碼 (GMAIL_APP_PASSWORD): {pwd_status}", flush=True)
+    print(f"   - 收件信箱 (RECEIVER_EMAIL): {receiver_emails_str}", flush=True)
+
     if not sender_email or not sender_password or not receiver_emails_str:
-        print("未設定完整的 Email 環境變數，無法發送郵件。")
+        print("❌ 致命錯誤：環境變數有缺漏，程式強制取消寄信！請檢查 GitHub Secrets。", flush=True)
         return
 
     receivers_list = [email.strip() for email in receiver_emails_str.split(',')]
@@ -185,20 +192,27 @@ def send_email(df):
     msg.attach(MIMEText(html_content, 'html', 'utf-8'))
 
     try:
+        print("▶ 正在連線至 Gmail SMTP 伺服器...", flush=True)
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
+        
+        print("▶ 正在嘗試登入 Gmail...", flush=True)
         server.login(sender_email, sender_password)
+        
+        print(f"▶ 登入成功！準備發送郵件給 {len(receivers_list)} 位收件者...", flush=True)
         server.sendmail(sender_email, receivers_list, msg.as_string())
         server.quit()
-        print(f"✅ HTML 郵件成功發送給 {len(receivers_list)} 位收件者！")
+        print(f"✅ HTML 郵件成功發送給 {len(receivers_list)} 位收件者！", flush=True)
+    except smtplib.SMTPAuthenticationError as e:
+        print(f"❌ 登入失敗！請檢查您的應用程式密碼是否正確。詳細錯誤: {e}", flush=True)
     except Exception as e:
-        print(f"❌ 郵件發送失敗: {e}")
+        print(f"❌ 郵件發送發生未知錯誤: {e}", flush=True)
 
 # ==========================================
 # 主程式執行區塊
 # ==========================================
 if __name__ == "__main__":
-    print("--- 開始執行政府採購網自動化爬蟲 ---")
+    print("--- 開始執行政府採購網自動化爬蟲 ---", flush=True)
     results = scrape_pcc_tenders()
     
     if results and len(results) > 0:
@@ -208,23 +222,22 @@ if __name__ == "__main__":
         df = df.drop_duplicates(subset=['標案案號'], keep='first')
         
         total_electric = len(df)
-        print(f"✅ 第一階段：成功抓取到 {total_electric} 筆包含「電動」的案件。")
+        print(f"✅ 第一階段：成功抓取到 {total_electric} 筆包含「電動」的案件。", flush=True)
         
         # ==========================================
         # 【階段二：本地精準過濾】只保留標案名稱中有「車」的案件
         # ==========================================
-        print("▶ 第二階段：正在本地過濾名稱中包含「車」的案件...")
-        # na=False 避免空值造成錯誤
+        print("▶ 第二階段：正在本地過濾名稱中包含「車」的案件...", flush=True)
         df = df[df['標案名稱'].str.contains('車', na=False)].reset_index(drop=True)
         
         final_count = len(df)
-        print(f"✅ 過濾完成：剃除了 {total_electric - final_count} 筆非車輛案件，最終保留 {final_count} 筆。")
+        print(f"✅ 過濾完成：剃除了 {total_electric - final_count} 筆非車輛案件，最終保留 {final_count} 筆。", flush=True)
         
         # 階段三：判斷並發送郵件
         if not df.empty:
-            print(f"準備將這 {final_count} 筆資料寄發 HTML 信件...")
-            #send_email(df)
+            print(f"準備將這 {final_count} 筆資料寄發 HTML 信件...", flush=True)
+            send_email(df)
         else:
-            print("經過「車」字過濾後，沒有符合的案件，不發送郵件。")
+            print("經過「車」字過濾後，沒有符合的案件，不發送郵件。", flush=True)
     else:
-        print("網站上沒有查詢到任何「電動」相關新案件，程式自動結束。")
+        print("網站上沒有查詢到任何「電動」相關新案件，程式自動結束。", flush=True)
