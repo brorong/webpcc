@@ -2,9 +2,9 @@ name: Daily EV Tenders Scraper
 
 on:
   schedule:
-    # 分 時 日 月 星期。 23:50 UTC = 台灣時間 07:50
-    - cron: '50 23 * * *'
-  workflow_dispatch: # 允許您在 GitHub 網頁上手動點擊執行測試
+    # 每天台灣時間早上 06:30 執行 (UTC 22:30)
+    - cron: '30 23 * * *'
+  workflow_dispatch: # 允許手動點擊執行
 
 jobs:
   run-scraper-and-email:
@@ -25,8 +25,10 @@ jobs:
         pip install -r requirements.txt
 
     - name: Run Scraper
+      # 【關鍵修復】：在這裡把 GitHub Secrets 確實傳遞給 Python
       env:
         GMAIL_USER: ${{ secrets.GMAIL_USER }}
         GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
         RECEIVER_EMAIL: ${{ secrets.RECEIVER_EMAIL }}
+        PYTHONUNBUFFERED: 1  # 強制讓 Python 的所有錯誤或警告訊息即時顯示
       run: python scraper.py
