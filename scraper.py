@@ -27,7 +27,7 @@ def get_dynamic_urls():
     print(f"🔍 搜尋日期區間：{start_str} ~ {end_str}")
     
     # 您想要查詢的關鍵字清單 (可隨時在此擴充)
-    keywords = ["電動車", "電動汽車"]
+    keywords = ["電動車", "電動汽車", "電動 車"]
     urls = []
     
     for kw in keywords:
