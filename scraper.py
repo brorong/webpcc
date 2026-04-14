@@ -214,7 +214,7 @@ if __name__ == "__main__":
         
         if not df.empty:
             print(f"成功整理出 {final_count} 筆最新資料，準備寄發 HTML 信件...")
-            send_email(df)
+            #send_email(df)
         else:
             print("表格內容去重後為空，不發送郵件。")
     else:
