@@ -26,8 +26,8 @@ def get_dynamic_urls():
     
     print(f"🔍 搜尋日期區間：{start_str} ~ {end_str}")
     
-    # 您想要查詢的關鍵字清單 (可隨時在此擴充)
-    keywords = ["電動車", "電動汽車", "電動 車"]
+    # 【階段一：寬鬆抓取】只搜尋「電動」大類
+    keywords = ["電動"]
     urls = []
     
     for kw in keywords:
@@ -57,9 +57,9 @@ def scrape_pcc_tenders():
     all_data = []
 
     try:
-        # 輪流造訪每一個關鍵字的網址
+        # 輪流造訪每一個關鍵字的網址 (目前只有"電動")
         for kw, url in urls_info:
-            print(f"▶ 正在搜尋關鍵字：【{kw}】...")
+            print(f"▶ 正在網站上搜尋包含【{kw}】的大範圍案件...")
             driver.get(url)
             time.sleep(5) # 等待 JS 渲染
             
@@ -104,7 +104,7 @@ def scrape_pcc_tenders():
 
                     # --- 4. 組合資料 ---
                     all_data.append({
-                        "項次": texts[0],  # 這個項次稍後會因為去重而重排
+                        "項次": texts[0],
                         "機關名稱": texts[1],
                         "標案案號": tender_no,
                         "標案名稱": tender_name,
@@ -139,10 +139,10 @@ def send_email(df):
     msg = MIMEMultipart()
     msg['From'] = sender_email
     msg['To'] = ", ".join(receivers_list)
-    msg['Subject'] = f"電動車標案決標通知 ({date_str})"
+    msg['Subject'] = f"電動車/相關載具標案決標通知 ({date_str})"
 
     content_lines = []
-    # 使用 iterrows 時，利用迴圈的 index 重新編排顯示的項次
+    # 使用 iterrows 重新編排顯示的項次
     for display_index, (index, row) in enumerate(df.iterrows(), start=1):
         item_html = f"""
         <div style="margin-bottom: 20px;">
@@ -171,8 +171,8 @@ def send_email(df):
     <html>
     <head></head>
     <body style="font-family: '微軟正黑體', 'Segoe UI', sans-serif; color: #333333; line-height: 1.5; padding: 10px;">
-        <h3 style="color: #007BFF; border-bottom: 2px solid #007BFF; padding-bottom: 5px;">每日電動車決標案件速報 🚗</h3>
-        <p style="font-size: 15px;">您好，以下為最近 3 天的相關決標案件。本日共為您抓取並過濾出 <b>{len(df)}</b> 筆最新不重複資訊：</p>
+        <h3 style="color: #007BFF; border-bottom: 2px solid #007BFF; padding-bottom: 5px;">每日電動車/汽車決標案件速報 🚗</h3>
+        <p style="font-size: 15px;">您好，以下為最近 3 天的相關決標案件。本日共為您抓取並篩選出 <b>{len(df)}</b> 筆包含「電動」與「車」的最新資訊：</p>
         <br>
         {items_html_string}
         <p style="color: #999999; font-size: 12px; margin-top: 30px;">
@@ -204,18 +204,27 @@ if __name__ == "__main__":
     if results and len(results) > 0:
         df = pd.DataFrame(results)
         
-        # --- 關鍵防呆：依據「標案案號」去除重複的資料 ---
-        original_count = len(df)
-        df = df.drop_duplicates(subset=['標案案號'], keep='first').reset_index(drop=True)
+        # 先去除重複的資料 (以防網頁有重複案號)
+        df = df.drop_duplicates(subset=['標案案號'], keep='first')
+        
+        total_electric = len(df)
+        print(f"✅ 第一階段：成功抓取到 {total_electric} 筆包含「電動」的案件。")
+        
+        # ==========================================
+        # 【階段二：本地精準過濾】只保留標案名稱中有「車」的案件
+        # ==========================================
+        print("▶ 第二階段：正在本地過濾名稱中包含「車」的案件...")
+        # na=False 避免空值造成錯誤
+        df = df[df['標案名稱'].str.contains('車', na=False)].reset_index(drop=True)
+        
         final_count = len(df)
+        print(f"✅ 過濾完成：剃除了 {total_electric - final_count} 筆非車輛案件，最終保留 {final_count} 筆。")
         
-        if original_count > final_count:
-            print(f"🔄 自動過濾了 {original_count - final_count} 筆重複符合多個關鍵字的標案。")
-        
+        # 階段三：判斷並發送郵件
         if not df.empty:
-            print(f"成功整理出 {final_count} 筆最新資料，準備寄發 HTML 信件...")
-            #send_email(df)
+            print(f"準備將這 {final_count} 筆資料寄發 HTML 信件...")
+            send_email(df)
         else:
-            print("表格內容去重後為空，不發送郵件。")
+            print("經過「車」字過濾後，沒有符合的案件，不發送郵件。")
     else:
-        print("沒有查詢到任何新案件，郵件不用發出，程式自動結束。")
+        print("網站上沒有查詢到任何「電動」相關新案件，程式自動結束。")
