@@ -223,7 +223,7 @@ if __name__ == "__main__":
         # 階段三：判斷並發送郵件
         if not df.empty:
             print(f"準備將這 {final_count} 筆資料寄發 HTML 信件...")
-            send_email(df)
+            #send_email(df)
         else:
             print("經過「車」字過濾後，沒有符合的案件，不發送郵件。")
     else:
