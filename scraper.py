@@ -2,7 +2,7 @@ import os
 import sys
 import time
 import urllib.parse
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -27,7 +27,7 @@ def describe_page(label, html):
 
 def get_dynamic_urls():
     # 預設抓取最近 3 天的資料 (校正為台灣時間 UTC+8)
-    tw_time = datetime.utcnow() + timedelta(hours=8)
+    tw_time = datetime.now(timezone.utc) + timedelta(hours=8)
     start_date = tw_time - timedelta(days=3)
     
     start_str = start_date.strftime("%Y/%m/%d")
@@ -168,7 +168,7 @@ def send_email(df):
 
     receivers_list = [email.strip() for email in receiver_emails_str.split(',')]
 
-    tw_time = datetime.utcnow() + timedelta(hours=8)
+    tw_time = datetime.now(timezone.utc) + timedelta(hours=8)
     date_str = tw_time.strftime('%Y-%m-%d')
 
     msg = MIMEMultipart()
