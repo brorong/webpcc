@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import urllib.parse
 from datetime import datetime, timedelta
@@ -12,6 +13,17 @@ from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 import pandas as pd
+
+def describe_page(label, html):
+    # 【診斷】印出網頁摘要，判斷是否拿到正常的查詢結果頁
+    soup = BeautifulSoup(html, "html.parser")
+    title = soup.title.get_text(strip=True) if soup.title else "(無 title)"
+    has_table = soup.find("table", id="atm") is not None
+    print(f"   [{label}] 長度={len(html)}，title={title}，結果表格(atm)={'有' if has_table else '無'}", flush=True)
+    if not has_table:
+        snippet = soup.get_text(" ", strip=True)[:500]
+        print(f"   [{label}] 頁面文字前 500 字：{snippet}", flush=True)
+    return has_table
 
 def get_dynamic_urls():
     # 預設抓取最近 3 天的資料 (校正為台灣時間 UTC+8)
@@ -47,14 +59,21 @@ def scrape_pcc_tenders():
     chrome_options.add_argument("--no-sandbox")            
     chrome_options.add_argument("--disable-dev-shm-usage") 
     chrome_options.add_argument("--window-size=1920,1080")
-    chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
     print("正在啟動虛擬瀏覽器...", flush=True)
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=chrome_options)
-    
+
+    # 【關鍵修復】採購網防火牆會阻擋舊版 Chrome 與 HeadlessChrome 的 User-Agent，
+    # 因此改用本機實際安裝的 Chrome 版本號，並移除 "Headless" 字樣
+    chrome_major = driver.capabilities.get("browserVersion", "141").split(".")[0]
+    user_agent = f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{chrome_major}.0.0.0 Safari/537.36"
+    driver.execute_cdp_cmd("Network.setUserAgentOverride", {"userAgent": user_agent})
+    print(f"   使用 User-Agent：{user_agent}", flush=True)
+
     base_url = "https://web.pcc.gov.tw"
     all_data = []
+    page_ok = True
 
     try:
         # 輪流造訪每一個關鍵字的網址
@@ -62,8 +81,16 @@ def scrape_pcc_tenders():
             print(f"▶ 正在網站上搜尋包含【{kw}】的大範圍案件...", flush=True)
             driver.get(url)
             time.sleep(5) # 等待 JS 渲染
-            
-            soup = BeautifulSoup(driver.page_source, "html.parser")
+
+            html = driver.page_source
+            print(f"   [selenium] 最終網址={driver.current_url}", flush=True)
+            if not describe_page("selenium", html):
+                page_ok = False
+                with open("debug_page.html", "w", encoding="utf-8") as f:
+                    f.write(html)
+                print("   [selenium] 已將收到的網頁存成 debug_page.html", flush=True)
+
+            soup = BeautifulSoup(html, "html.parser")
             rows = soup.find_all("tr")
 
             for row in rows:
@@ -117,10 +144,11 @@ def scrape_pcc_tenders():
 
     except Exception as e:
         print(f"執行過程中發生錯誤: {e}", flush=True)
+        page_ok = False
     finally:
         driver.quit()
 
-    return all_data
+    return all_data, page_ok
 
 def send_email(df):
     print("▶ 進入發信模組，開始讀取環境變數...", flush=True)
@@ -213,8 +241,13 @@ def send_email(df):
 # ==========================================
 if __name__ == "__main__":
     print("--- 開始執行政府採購網自動化爬蟲 ---", flush=True)
-    results = scrape_pcc_tenders()
-    
+    results, page_ok = scrape_pcc_tenders()
+
+    if not page_ok:
+        # 沒拿到正常的查詢結果頁 → 讓 GitHub Actions 顯示失敗，而不是假裝「沒有新案件」
+        print("❌ 沒有取得正常的查詢結果頁（可能被網站阻擋），請查看上方診斷訊息。", flush=True)
+        sys.exit(1)
+
     if results and len(results) > 0:
         df = pd.DataFrame(results)
         

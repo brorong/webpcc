@@ -32,3 +32,12 @@ jobs:
         RECEIVER_EMAIL: ${{ secrets.RECEIVER_EMAIL }}
         PYTHONUNBUFFERED: 1  # 強制讓 Python 的所有錯誤或警告訊息即時顯示
       run: python scraper.py
+
+    - name: Upload Debug Page
+      # 抓取失敗時，把爬蟲實際收到的網頁上傳，方便判斷是否被網站阻擋
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: debug-page
+        path: debug_page.html
+        if-no-files-found: ignore
