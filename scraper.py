@@ -14,6 +14,8 @@ from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 import pandas as pd
 
+ZHIJIE_LABEL = "智捷得標"
+
 def describe_page(label, html):
     # 【診斷】印出網頁摘要，判斷是否拿到正常的查詢結果頁
     soup = BeautifulSoup(html, "html.parser")
@@ -42,11 +44,17 @@ def get_dynamic_urls():
     keywords = ["電動"]
     urls = []
     
-    for kw in keywords:
+    def build_url(kw, gotten_vendor=""):
         kw_encoded = urllib.parse.quote(kw, safe='')
-        url = f"https://web.pcc.gov.tw/prkms/tender/common/agent/readTenderAgent?pageSize=50&firstSearch=false&isQuery=&isBinding=N&isLogIn=N&orgName=&orgId=&tenderName={kw_encoded}&tenderId=&tenderStatus=TENDER_STATUS_1&tenderWay=TENDER_WAY_ALL_DECLARATION&awardAnnounceStartDate={start_encoded}&awardAnnounceEndDate={end_encoded}&radProctrgCate=&tenderRange=TENDER_RANGE_ALL&minBudget=&maxBudget=&item=&gottenVendorName=&gottenVendorId=&submitVendorName=&submitVendorId=&execLocation=&priorityCate=&radReConstruct=&policyAdvocacy=&isCpp="
-        urls.append((kw, url))
-        
+        vendor_encoded = urllib.parse.quote(gotten_vendor, safe='')
+        return f"https://web.pcc.gov.tw/prkms/tender/common/agent/readTenderAgent?pageSize=50&firstSearch=false&isQuery=&isBinding=N&isLogIn=N&orgName=&orgId=&tenderName={kw_encoded}&tenderId=&tenderStatus=TENDER_STATUS_1&tenderWay=TENDER_WAY_ALL_DECLARATION&awardAnnounceStartDate={start_encoded}&awardAnnounceEndDate={end_encoded}&radProctrgCate=&tenderRange=TENDER_RANGE_ALL&minBudget=&maxBudget=&item=&gottenVendorName={vendor_encoded}&gottenVendorId=&submitVendorName=&submitVendorId=&execLocation=&priorityCate=&radReConstruct=&policyAdvocacy=&isCpp="
+
+    for kw in keywords:
+        urls.append((kw, build_url(kw)))
+
+    # 【智捷得標】同區間、同關鍵字，但限定得標廠商名稱含「智捷」，用來在信件中標註
+    urls.append((ZHIJIE_LABEL, build_url("電動", gotten_vendor="智捷")))
+
     return urls
 
 def scrape_pcc_tenders():
@@ -78,7 +86,7 @@ def scrape_pcc_tenders():
     try:
         # 輪流造訪每一個關鍵字的網址
         for kw, url in urls_info:
-            print(f"▶ 正在網站上搜尋包含【{kw}】的大範圍案件...", flush=True)
+            print(f"▶ 正在網站上搜尋【{kw}】的案件...", flush=True)
             driver.get(url)
             time.sleep(5) # 等待 JS 渲染
 
@@ -131,6 +139,7 @@ def scrape_pcc_tenders():
 
                     # --- 4. 組合資料 ---
                     all_data.append({
+                        "查詢": kw,
                         "項次": texts[0],
                         "機關名稱": texts[1],
                         "標案案號": tender_no,
@@ -174,15 +183,23 @@ def send_email(df):
     msg = MIMEMultipart()
     msg['From'] = sender_email
     msg['To'] = ", ".join(receivers_list)
-    msg['Subject'] = f"電動車/相關載具標案決標通知 ({date_str})"
+    zhijie_count = int(df['智捷得標'].sum())
+    zhijie_prefix = f"【智捷得標 {zhijie_count} 件】" if zhijie_count else ""
+    msg['Subject'] = f"{zhijie_prefix}電動車/相關載具標案決標通知 ({date_str})"
 
     content_lines = []
     # 使用 iterrows 重新編排顯示的項次
     for display_index, (index, row) in enumerate(df.iterrows(), start=1):
+        if row['智捷得標']:
+            box_style = "margin-bottom: 20px; background-color: #FFF4E5; border-left: 5px solid #FF8C00; padding: 10px 12px;"
+            badge = '<span style="background-color: #FF8C00; color: #ffffff; padding: 2px 8px; border-radius: 4px; font-size: 13px; margin-right: 6px;">🏆 智捷得標</span>'
+        else:
+            box_style = "margin-bottom: 20px;"
+            badge = ""
         item_html = f"""
-        <div style="margin-bottom: 20px;">
+        <div style="{box_style}">
             <h4 style="color: #0056b3; margin-top: 0; margin-bottom: 10px; font-size: 16px;">
-                【第 {display_index} 筆】{row['標案名稱']}
+                {badge}【第 {display_index} 筆】{row['標案名稱']}
             </h4>
             <p style="margin: 3px 0;"><b>機關名稱：</b>{row['機關名稱']}</p>
             <p style="margin: 3px 0;"><b>標案案號：</b>{row['標案案號']}</p>
@@ -202,12 +219,23 @@ def send_email(df):
     
     items_html_string = "".join(content_lines)
 
+    if zhijie_count:
+        zhijie_list = "".join(f"<li>{r['機關名稱']}｜{r['標案名稱']}｜決標金額 {r['決標金額']}</li>" for _, r in df[df['智捷得標']].iterrows())
+        zhijie_summary = f"""
+        <div style="background-color: #FFF4E5; border: 1px solid #FF8C00; border-radius: 6px; padding: 10px 14px; margin-bottom: 10px;">
+            <p style="margin: 0 0 6px 0; font-size: 15px; color: #C05600;"><b>🏆 本期「智捷」得標案件：{zhijie_count} 件</b></p>
+            <ul style="margin: 0; padding-left: 20px;">{zhijie_list}</ul>
+        </div>"""
+    else:
+        zhijie_summary = '<p style="font-size: 14px; color: #666666;">本期沒有「智捷」得標的案件。</p>'
+
     html_content = f"""
     <html>
     <head></head>
     <body style="font-family: '微軟正黑體', 'Segoe UI', sans-serif; color: #333333; line-height: 1.5; padding: 10px;">
         <h3 style="color: #007BFF; border-bottom: 2px solid #007BFF; padding-bottom: 5px;">每日電動車/汽車決標案件速報 🚗</h3>
         <p style="font-size: 15px;">您好，以下為最近 3 天的相關決標案件。本日共為您抓取並篩選出 <b>{len(df)}</b> 筆包含「電動」與「車」的最新資訊：</p>
+        {zhijie_summary}
         <br>
         {items_html_string}
         <p style="color: #999999; font-size: 12px; margin-top: 30px;">
@@ -248,9 +276,17 @@ if __name__ == "__main__":
         print("❌ 沒有取得正常的查詢結果頁（可能被網站阻擋），請查看上方診斷訊息。", flush=True)
         sys.exit(1)
 
-    if results and len(results) > 0:
+    if any(r['查詢'] != ZHIJIE_LABEL for r in results):
         df = pd.DataFrame(results)
-        
+
+        # 智捷得標的案號 (來自「智捷得標」查詢)
+        zhijie_ids = set(df.loc[df['查詢'] == ZHIJIE_LABEL, '標案案號'])
+        print(f"🏆 其中「智捷」得標的案件：{len(zhijie_ids)} 筆", flush=True)
+
+        # 以「電動」查詢結果為主，並標註是否為智捷得標
+        df = df[df['查詢'] != ZHIJIE_LABEL].copy()
+        df['智捷得標'] = df['標案案號'].isin(zhijie_ids)
+
         # 先去除重複的資料 (以防網頁有重複案號)
         df = df.drop_duplicates(subset=['標案案號'], keep='first')
         
@@ -261,7 +297,9 @@ if __name__ == "__main__":
         # 【階段二：本地精準過濾】只保留標案名稱中有「車」的案件
         # ==========================================
         print("▶ 第二階段：正在本地過濾名稱中包含「車」的案件...", flush=True)
-        df = df[df['標案名稱'].str.contains('車', na=False)].reset_index(drop=True)
+        df = df[df['標案名稱'].str.contains('車', na=False) | df['智捷得標']]
+        # 智捷得標的案件排在最前面
+        df = df.sort_values('智捷得標', ascending=False, kind='stable').reset_index(drop=True)
         
         final_count = len(df)
         print(f"✅ 過濾完成：剃除了 {total_electric - final_count} 筆非車輛案件，最終保留 {final_count} 筆。", flush=True)
