@@ -10,11 +10,41 @@ from email.mime.text import MIMEText
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
+from selenium.common.exceptions import TimeoutException
 from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 import pandas as pd
 
 ZHIJIE_LABEL = "智捷得標"
+PAGE_LOAD_TIMEOUT = 60   # 單次載入最多等幾秒（需小於 Selenium 內部的 120 秒上限）
+MAX_ATTEMPTS = 3         # 每個網址最多重試幾次
+
+def save_debug_page(html):
+    try:
+        with open("debug_page.html", "w", encoding="utf-8") as f:
+            f.write(html or "")
+        print("   [selenium] 已將收到的網頁存成 debug_page.html", flush=True)
+    except Exception as e:
+        print(f"   [selenium] 存 debug_page.html 失敗：{e}", flush=True)
+
+def load_page(driver, url):
+    """載入網頁；逾時就停止載入，若結果表格已出現就直接使用，否則重試。"""
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            driver.get(url)
+            return True
+        except TimeoutException:
+            print(f"   第 {attempt} 次載入逾時（{PAGE_LOAD_TIMEOUT} 秒）", flush=True)
+            try:
+                driver.execute_script("window.stop();")
+                if 'id="atm"' in driver.page_source:
+                    print("   結果表格已載入，直接使用目前內容", flush=True)
+                    return True
+            except Exception:
+                pass
+            if attempt < MAX_ATTEMPTS:
+                time.sleep(15)
+    return False
 
 def describe_page(label, html):
     # 【診斷】印出網頁摘要，判斷是否拿到正常的查詢結果頁
@@ -67,10 +97,13 @@ def scrape_pcc_tenders():
     chrome_options.add_argument("--no-sandbox")            
     chrome_options.add_argument("--disable-dev-shm-usage") 
     chrome_options.add_argument("--window-size=1920,1080")
+    # 只要 DOM 載好就繼續，不等圖片、外部統計碼等資源（避免被慢資源卡住）
+    chrome_options.page_load_strategy = "eager"
 
     print("正在啟動虛擬瀏覽器...", flush=True)
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=chrome_options)
+    driver.set_page_load_timeout(PAGE_LOAD_TIMEOUT)
 
     # 【關鍵修復】採購網防火牆會阻擋舊版 Chrome 與 HeadlessChrome 的 User-Agent，
     # 因此改用本機實際安裝的 Chrome 版本號，並移除 "Headless" 字樣
@@ -87,16 +120,15 @@ def scrape_pcc_tenders():
         # 輪流造訪每一個關鍵字的網址
         for kw, url in urls_info:
             print(f"▶ 正在網站上搜尋【{kw}】的案件...", flush=True)
-            driver.get(url)
+            if not load_page(driver, url):
+                print(f"   ❌ 【{kw}】重試 {MAX_ATTEMPTS} 次仍無法載入（採購網可能限制海外連線）", flush=True)
             time.sleep(5) # 等待 JS 渲染
 
             html = driver.page_source
             print(f"   [selenium] 最終網址={driver.current_url}", flush=True)
             if not describe_page("selenium", html):
                 page_ok = False
-                with open("debug_page.html", "w", encoding="utf-8") as f:
-                    f.write(html)
-                print("   [selenium] 已將收到的網頁存成 debug_page.html", flush=True)
+                save_debug_page(html)
 
             soup = BeautifulSoup(html, "html.parser")
             rows = soup.find_all("tr")
@@ -154,6 +186,10 @@ def scrape_pcc_tenders():
     except Exception as e:
         print(f"執行過程中發生錯誤: {e}", flush=True)
         page_ok = False
+        try:
+            save_debug_page(driver.page_source)
+        except Exception:
+            pass
     finally:
         driver.quit()
 
